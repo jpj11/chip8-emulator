@@ -328,6 +328,7 @@ void Execute00E0()
 void Execute00EE()
 {
     //printf(" 00EE");
+    PC = mainMemory[SP--];
 }
 
 void Execute0NNN(WORD inst)
@@ -340,9 +341,12 @@ void Execute1NNN(WORD inst)
     //printf(" 1NNN 0x%03X", inst & 0x0FFF);
 }
 
+// Call subroutine: call NNN
 void Execute2NNN(WORD inst)
 {
     //printf(" 2NNN 0x%03X", inst & 0x0FFF);
+    mainMemory[SP++] = PC;
+    PC = inst & 0x0FFF;
 }
 
 void Execute3XNN(WORD inst)
