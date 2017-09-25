@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <SDL.h>
 
 typedef unsigned char BYTE;
 typedef unsigned short WORD;
@@ -7,42 +8,26 @@ typedef unsigned short WORD;
 #define MEMORY_SIZE 0xFFF
 #define STACK_START 0xEA0
 #define PROGRAM_START 0x200
+#define NUM_REGISTERS 16
 
 #define SCREEN_WIDTH 64
 #define SCREEN_HEIGHT 32
+#define CHANNELS 3
+#define MULTIPLIER 20
+#define SPRITE_WIDTH 8
 
 // Program should reside in 0x200 - 0xE9F inclusive
 BYTE mainMemory[MEMORY_SIZE];
 
-struct DataRegisters
-{
-    BYTE V0;
-    BYTE V1;
-    BYTE V2;
-    BYTE V3;
-    BYTE V4;
-    BYTE V5;
-    BYTE V6;
-    BYTE V7;
-    BYTE V8;
-    BYTE V9;
-    BYTE VA;
-    BYTE VB;
-    BYTE VC;
-    BYTE VD;
-    BYTE VE;
-
-    // In addition VF is carry flag, in subtraction it is the "not borrow" flag. In draw
-    // inst, it is set upon pixel collision
-    BYTE VF;
-} dataRegisters;
+BYTE dataRegisters[NUM_REGISTERS];
 
 WORD regI;  // Address register
 WORD PC;    // Program counter (16 bits but only 12 necessary)
 WORD SP;    // Stack pointer
 
 // 2D array of bytes representing the data on the screen at any given time
-BYTE screenData[SCREEN_WIDTH][SCREEN_HEIGHT];
+//BYTE screenData[SCREEN_WIDTH * SCREEN_HEIGHT * CHANNELS];
+BYTE screenData[SCREEN_HEIGHT][SCREEN_WIDTH][CHANNELS];
 
 void CPUReset();
 
@@ -94,6 +79,7 @@ int main (int argc, char **argv)
 {
     int execute = 1;
     WORD inst = 0;
+    long inputSize = 0;
 
     // Check for valid usage
     if (argc != 2)
@@ -112,14 +98,112 @@ int main (int argc, char **argv)
 
     // Initialize CPU and load ROM into mainMemory
     CPUReset();
-    fread(&mainMemory[PROGRAM_START], MEMORY_SIZE, 1, input);
+
+    // Obtain filesize
+    fseek(input, 0, SEEK_END);
+    inputSize = ftell(input);
+    rewind(input);
+
+    fread(&mainMemory[PROGRAM_START], inputSize, 1, input);
+
     fclose(input);
 
-    // Disassemble
-    while(PC < 0x284)
+    // for(int y = 0; y < SCREEN_HEIGHT; ++y) 
+    // {
+    //     for(int x = 0; x < SCREEN_WIDTH; ++x)
+    //     {
+    //         if((x % 2 == 0 && y % 2 == 0) || (x % 2 != 0 && y % 2 != 0))
+    //         {
+    //             screenData[y][x][0] = 0x00;
+    //             screenData[y][x][1] = 0x00;
+    //             screenData[y][x][2] = 0x00;
+    //         }
+    //         else
+    //         {
+    //             screenData[y][x][0] = 0x53;
+    //             screenData[y][x][1] = 0x7D;
+    //             screenData[y][x][2] = 0x55;
+    //         }
+    //     }
+    // }
+
+    SDL_Window *window = NULL;
+    SDL_Surface *surface = NULL;
+    SDL_Surface *graphics = NULL;
+
+    if(SDL_Init(SDL_INIT_VIDEO) < 0)
     {
+        printf("SDL ERROR!\nCould not initialize: %s", SDL_GetError());
+    }
+    else
+    {
+        window = SDL_CreateWindow("chip8-emu", SDL_WINDOWPOS_UNDEFINED,
+                 SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH * MULTIPLIER,
+                 SCREEN_HEIGHT * MULTIPLIER, SDL_WINDOW_SHOWN);
+        if(window == NULL)
+        {
+            printf("SDL ERROR!\nWindow could not be created: %s", SDL_GetError());
+        }
+        // else
+        // {
+        //     surface = SDL_GetWindowSurface(window);
+        //     graphics = SDL_CreateRGBSurfaceFrom(
+        //         (void *)screenData,
+        //         SCREEN_WIDTH,
+        //         SCREEN_HEIGHT,
+        //         CHANNELS * 8,
+        //         SCREEN_WIDTH * CHANNELS,
+        //         0x0000FF,
+        //         0x00FF00,
+        //         0xFF0000,
+        //         0x000000
+        //     );
+        //     SDL_BlitScaled(graphics, NULL, surface, NULL);
+        //     SDL_UpdateWindowSurface(window);
+        // }
+    }
+
+    // Disassemble
+    // while(PC < inputSize + PROGRAM_START)
+    // {
+    //     inst = Fetch();
+    //     DecodeExecute(inst);
+    // }
+
+    int quit = 0;
+    SDL_Event e;
+
+    CPUReset();
+    //While application is running
+    while( !quit )
+    {
+        //Handle events on queue
+        while( SDL_PollEvent( &e ) != 0 )
+        {
+            //User requests quit
+            if( e.type == SDL_QUIT )
+            {
+                quit = 1;
+            }
+        }
+
         inst = Fetch();
         DecodeExecute(inst);
+
+        surface = SDL_GetWindowSurface(window);
+        graphics = SDL_CreateRGBSurfaceFrom(
+            (void *)screenData,
+            SCREEN_WIDTH,
+            SCREEN_HEIGHT,
+            CHANNELS * 8,
+            SCREEN_WIDTH * CHANNELS,
+            0x0000FF,
+            0x00FF00,
+            0xFF0000,
+            0x000000
+        );
+        SDL_BlitScaled(graphics, NULL, surface, NULL);
+        SDL_UpdateWindowSurface(window);
     }
 
     return 0;
@@ -127,36 +211,22 @@ int main (int argc, char **argv)
 
 void CPUReset()
 {
-    // Reset register values
+    int i;
     regI = 0x000;
     PC = PROGRAM_START;
     SP = STACK_START;
-    dataRegisters.V0 = 0x00;
-    dataRegisters.V1 = 0x00;
-    dataRegisters.V2 = 0x00;
-    dataRegisters.V3 = 0x00;
-    dataRegisters.V4 = 0x00;
-    dataRegisters.V5 = 0x00;
-    dataRegisters.V6 = 0x00;
-    dataRegisters.V7 = 0x00;
-    dataRegisters.V8 = 0x00;
-    dataRegisters.V9 = 0x00;
-    dataRegisters.VA = 0x00;
-    dataRegisters.VB = 0x00;
-    dataRegisters.VC = 0x00;
-    dataRegisters.VD = 0x00;
-    dataRegisters.VE = 0x00;
-    dataRegisters.VF = 0x00;
+    for(i = 0; i < NUM_REGISTERS; ++i)
+    {
+        dataRegisters[i] = 0x00;
+    }
 }
 
 WORD Fetch()
 {
-    WORD inst = 0;
-    inst = mainMemory[PC];
+    WORD inst = mainMemory[PC++];
     inst <<= 8;
-    inst |= mainMemory[PC+1];
-    PC += 2;
-    printf("0x%04X:", inst);
+    inst |= mainMemory[PC++];
+    //printf("0x%04X:", inst);
     return inst;
 }
 
@@ -182,7 +252,7 @@ void DecodeExecute(WORD inst)
         case 0xF000: DecodeF000(inst);  break;
         default: break;
     }
-    printf("\n");
+    //printf("\n");
 }
 
 void Decode0000(WORD inst)
@@ -239,178 +309,235 @@ void DecodeF000(WORD inst)
     }
 }
 
+// Clear the screen
 void Execute00E0()
 {
-    printf(" 00E0");
+    // printf(" 00E0");
+
+    for(int y = 0; y < SCREEN_HEIGHT; ++y) 
+    {
+        for(int x = 0; x < SCREEN_WIDTH; ++x)
+        {
+            screenData[y][x][0] = 0x53;
+            screenData[y][x][1] = 0x7D;
+            screenData[y][x][2] = 0x55;
+        }
+    }
 }
 
 void Execute00EE()
 {
-    printf(" 00EE");
+    //printf(" 00EE");
 }
 
 void Execute0NNN(WORD inst)
 {
-    printf(" 0NNN 0x%03X", inst & 0x0FFF);
+    //printf(" 0NNN 0x%03X", inst & 0x0FFF);
 }
 
 void Execute1NNN(WORD inst)
 {
-    printf(" 1NNN 0x%03X", inst & 0x0FFF);
+    //printf(" 1NNN 0x%03X", inst & 0x0FFF);
 }
 
 void Execute2NNN(WORD inst)
 {
-    printf(" 2NNN 0x%03X", inst & 0x0FFF);
+    //printf(" 2NNN 0x%03X", inst & 0x0FFF);
 }
 
 void Execute3XNN(WORD inst)
 {
-    printf(" 3XNN V%X, %d", (inst & 0x0F00) >> 8, inst & 0x00FF);
+    //printf(" 3XNN V%X, %d", (inst & 0x0F00) >> 8, inst & 0x00FF);
 }
 
 void Execute4XNN(WORD inst)
 {
-    printf(" 4XNN V%X, %d", (inst & 0x0F00) >> 8, inst & 0x00FF);
+    //printf(" 4XNN V%X, %d", (inst & 0x0F00) >> 8, inst & 0x00FF);
 }
 
 void Execute5XY0(WORD inst)
 {
-    printf(" 5XY0 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
+    //printf(" 5XY0 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
 }
 
+// Constant set: Vx = NN
 void Execute6XNN(WORD inst)
 {
-    printf(" 6XNN V%X, %d", (inst & 0x0F00) >> 8, inst & 0x00FF);
+    //printf(" 6XNN V%X, %d", (inst & 0x0F00) >> 8, inst & 0x00FF);
+    unsigned int x = (inst & 0x0F00) >> 8;
+    dataRegisters[x] = inst & 0x00FF;
 }
 
 void Execute7XNN(WORD inst)
 {
-    printf(" 7XNN V%X, %d", (inst & 0x0F00) >> 8, inst & 0x00FF);
+    //printf(" 7XNN V%X, %d", (inst & 0x0F00) >> 8, inst & 0x00FF);
 }
 
 void Execute8XY0(WORD inst)
 {
-    printf(" 8XY0 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
+    //printf(" 8XY0 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
 }
 
 void Execute8XY1(WORD inst)
 {
-    printf(" 8XY1 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
+    //printf(" 8XY1 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
 }
 
 void Execute8XY2(WORD inst)
 {
-    printf(" 8XY2 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
+    //printf(" 8XY2 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
 }
 
 void Execute8XY3(WORD inst)
 {
-    printf(" 8XY3 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
+    //printf(" 8XY3 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
 }
 
 void Execute8XY4(WORD inst)
 {
-    printf(" 8XY4 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
+    //printf(" 8XY4 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
 }
 
 void Execute8XY5(WORD inst)
 {
-    printf(" 8XY5 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
+    //printf(" 8XY5 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
 }
 
 void Execute8XY6(WORD inst)
 {
-    printf(" 8XY6 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
+    //printf(" 8XY6 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
 }
 
 void Execute8XY7(WORD inst)
 {
-    printf(" 8XY7 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
+    //printf(" 8XY7 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
 }
 
 void Execute8XYE(WORD inst)
 {
-    printf(" 8XYE V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
+    //printf(" 8XYE V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
 }
 
 void Execute9XY0(WORD inst)
 {
-    printf(" 9XY0 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
+    //printf(" 9XY0 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
 }
 
+// Set address register: I = NNN
 void ExecuteANNN(WORD inst)
 {
-    printf(" ANNN 0x%03X", inst & 0x0FFF);
+    //printf(" ANNN 0x%03X", inst & 0x0FFF);
+    regI = inst & 0x0FFF;
 }
 
 void ExecuteBNNN(WORD inst)
 {
-    printf(" BNNN 0x%03X", inst & 0x0FFF);
+    //printf(" BNNN 0x%03X", inst & 0x0FFF);
 }
 
 void ExecuteCXNN(WORD inst)
 {
-    printf(" CXNN V%X, %d", (inst & 0x0F00) >> 8, inst & 0x00FF);
+    //printf(" CXNN V%X, %d", (inst & 0x0F00) >> 8, inst & 0x00FF);
 }
 
+// Draw to screenData
 void ExecuteDXYN(WORD inst)
 {
-    printf(" DXYN V%X, V%X, %d",
-        (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4, inst & 0x000F);
+    //printf(" DXYN V%X, V%X, %d",
+    //    (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4, inst & 0x000F);
+    unsigned int regX = (inst & 0x0F00) >> 8;
+    unsigned int regY = (inst & 0x00F0) >> 4;
+    unsigned int startX = dataRegisters[regX];
+    unsigned int startY = dataRegisters[regY];
+    unsigned int height = inst & 0x000F;
+
+    int line, pixelPos, mask, x, y;
+    int drawColorR, drawColorG, drawColorB;
+    dataRegisters[0xF] = 0;
+
+    for(line = 0; line < height; ++line)
+    {
+        BYTE data = mainMemory[regI + line];
+
+        for(pixelPos = 0; pixelPos < SPRITE_WIDTH; ++pixelPos)
+        {
+            mask = 1 << (SPRITE_WIDTH - pixelPos - 1);
+
+            if ((data & mask) != 0x00)
+            {
+                x = startX + pixelPos;
+                y = startY + line;
+                drawColorR = drawColorG = drawColorB = 0x00;
+
+                if(screenData[y][x][0] == 0x00 &&
+                   screenData[y][x][1] == 0x00 &&
+                   screenData[y][x][2] == 0x00)
+                {
+                    dataRegisters[0xF] = 1;
+                    drawColorR = 0x53;
+                    drawColorG = 0x7D;
+                    drawColorB = 0x55;
+                }
+
+                screenData[y][x][0] = drawColorR;
+                screenData[y][x][1] = drawColorG;
+                screenData[y][x][2] = drawColorB;
+            }
+        }
+    }
 }
 
 void ExecuteEX9E(WORD inst)
 {
-    printf(" EX9E V%X", (inst & 0x0F00) >> 8);
+    //printf(" EX9E V%X", (inst & 0x0F00) >> 8);
 }
 
 void ExecuteEXA1(WORD inst)
 {
-    printf(" EXA1 V%X", (inst & 0x0F00) >> 8);
+    //printf(" EXA1 V%X", (inst & 0x0F00) >> 8);
 }
 
 void ExecuteFX07(WORD inst)
 {
-    printf(" FX07 V%X", (inst & 0x0F00) >> 8);
+    //printf(" FX07 V%X", (inst & 0x0F00) >> 8);
 }
 
 void ExecuteFX0A(WORD inst)
 {
-    printf(" FX0A V%X", (inst & 0x0F00) >> 8);
+    //printf(" FX0A V%X", (inst & 0x0F00) >> 8);
 }
 
 void ExecuteFX15(WORD inst)
 {
-    printf(" FX15 V%X", (inst & 0x0F00) >> 8);
+    //printf(" FX15 V%X", (inst & 0x0F00) >> 8);
 }
 
 void ExecuteFX18(WORD inst)
 {
-    printf(" FX18 V%X", (inst & 0x0F00) >> 8);
+    //printf(" FX18 V%X", (inst & 0x0F00) >> 8);
 }
 
 void ExecuteFX1E(WORD inst)
 {
-    printf(" FX1E V%X", (inst & 0x0F00) >> 8);
+    //printf(" FX1E V%X", (inst & 0x0F00) >> 8);
 }
 
 void ExecuteFX29(WORD inst)
 {
-    printf(" FX29 V%X", (inst & 0x0F00) >> 8);
+    //printf(" FX29 V%X", (inst & 0x0F00) >> 8);
 }
 
 void ExecuteFX33(WORD inst)
 {
-    printf(" FX33 V%X", (inst & 0x0F00) >> 8);
+    //printf(" FX33 V%X", (inst & 0x0F00) >> 8);
 }
 
 void ExecuteFX55(WORD inst)
 {
-    printf(" FX55 V%X", (inst & 0x0F00) >> 8);
+    //printf(" FX55 V%X", (inst & 0x0F00) >> 8);
 }
 
 void ExecuteFX65(WORD inst)
 {
-    printf(" FX65 V%X", (inst & 0x0F00) >> 8);
+    //printf(" FX65 V%X", (inst & 0x0F00) >> 8);
 }
