@@ -1,3 +1,4 @@
+.vscode/*
+c8games/*
 chip8-emu.exe
-c_cpp_properties.json
-launch.json
+SDL2.dll
