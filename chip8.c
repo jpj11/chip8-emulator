@@ -10,19 +10,23 @@ typedef unsigned short WORD;
 #define STACK_START 0xEA0
 #define PROGRAM_START 0x200
 #define NUM_REGISTERS 16
+#define NUM_KEYS 16
 
 #define SCREEN_WIDTH 64
 #define SCREEN_HEIGHT 32
 #define CHANNELS 3
-#define MULTIPLIER 20
+#define MULTIPLIER 10
 #define SPRITE_WIDTH 8
 
 // Program should reside in 0x200 - 0xE9F inclusive
 BYTE mainMemory[MEMORY_SIZE];
 
 BYTE dataRegisters[NUM_REGISTERS];
+BYTE inputKeys[NUM_KEYS];
 
 WORD regI;  // Address register
+WORD regDT; // Delay Timer
+WORD regST; // Sound Timer
 WORD PC;    // Program counter (16 bits but only 12 necessary)
 WORD SP;    // Stack pointer
 
@@ -31,6 +35,9 @@ WORD SP;    // Stack pointer
 BYTE screenData[SCREEN_HEIGHT][SCREEN_WIDTH][CHANNELS];
 
 void CPUReset();
+void InitNumericalSprites();
+void CheckForInput(SDL_Event event);
+Uint32 DecrementTimers(Uint32 interval, void *param);
 
 WORD Fetch();
 void DecodeExecute(WORD inst);
@@ -134,7 +141,7 @@ int main (int argc, char **argv)
     SDL_Surface *surface = NULL;
     SDL_Surface *graphics = NULL;
 
-    if(SDL_Init(SDL_INIT_VIDEO) < 0)
+    if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) < 0)
     {
         printf("SDL ERROR!\nCould not initialize: %s", SDL_GetError());
     }
@@ -174,17 +181,20 @@ int main (int argc, char **argv)
     // }
 
     int quit = 0;
-    SDL_Event e;
+    SDL_Event event;
 
     CPUReset();
+    SDL_TimerID timerID = SDL_AddTimer(17, DecrementTimers, NULL);
     //While application is running
-    while( !quit )
+    while(!quit)
     {
         //Handle events on queue
-        while( SDL_PollEvent( &e ) != 0 )
+        while(SDL_PollEvent(&event) != 0)
         {
+            CheckForInput(event);
+
             //User requests quit
-            if( e.type == SDL_QUIT )
+            if(event.type == SDL_QUIT )
             {
                 quit = 1;
             }
@@ -208,6 +218,7 @@ int main (int argc, char **argv)
         SDL_BlitScaled(graphics, NULL, surface, NULL);
         SDL_UpdateWindowSurface(window);
     }
+    SDL_RemoveTimer(timerID);
 
     return 0;
 }
@@ -216,12 +227,207 @@ void CPUReset()
 {
     int i;
     regI = 0x000;
+    regDT = 0x000;
+    regST = 0x000;
     PC = PROGRAM_START;
     SP = STACK_START;
+    InitNumericalSprites();
     for(i = 0; i < NUM_REGISTERS; ++i)
     {
         dataRegisters[i] = 0x00;
     }
+    for(i = 0; i < NUM_KEYS; ++i)
+    {
+        inputKeys[i] = 0x00;
+    }
+}
+
+void InitNumericalSprites()
+{
+    // The sprite 0
+    mainMemory[0x000] = 0xF0;
+    mainMemory[0x001] = 0x90;
+    mainMemory[0x002] = 0x90;
+    mainMemory[0x003] = 0x90;
+    mainMemory[0x004] = 0xF0;
+
+    // The sprite 1
+    mainMemory[0x005] = 0x20;
+    mainMemory[0x006] = 0x60;
+    mainMemory[0x007] = 0x20;
+    mainMemory[0x008] = 0x20;
+    mainMemory[0x009] = 0x70;
+
+    // The sprite 2
+    mainMemory[0x00A] = 0xF0;
+    mainMemory[0x00B] = 0x10;
+    mainMemory[0x00C] = 0xF0;
+    mainMemory[0x00D] = 0x80;
+    mainMemory[0x00E] = 0xF0;
+
+    // The sprite 3
+    mainMemory[0x00F] = 0xF0;
+    mainMemory[0x010] = 0x10;
+    mainMemory[0x011] = 0xF0;
+    mainMemory[0x012] = 0x10;
+    mainMemory[0x013] = 0xF0;
+
+    // The sprite 4
+    mainMemory[0x014] = 0x90;
+    mainMemory[0x015] = 0x90;
+    mainMemory[0x016] = 0xF0;
+    mainMemory[0x017] = 0x10;
+    mainMemory[0x018] = 0x10;
+
+    // The sprite 5
+    mainMemory[0x019] = 0xF0;
+    mainMemory[0x01A] = 0x80;
+    mainMemory[0x01B] = 0xF0;
+    mainMemory[0x01C] = 0x10;
+    mainMemory[0x01D] = 0xF0;
+
+    // The sprite 6
+    mainMemory[0x01E] = 0xF0;
+    mainMemory[0x01F] = 0x80;
+    mainMemory[0x020] = 0xF0;
+    mainMemory[0x021] = 0x90;
+    mainMemory[0x022] = 0xF0;
+
+    // The sprite 7
+    mainMemory[0x023] = 0xF0;
+    mainMemory[0x024] = 0x10;
+    mainMemory[0x025] = 0x20;
+    mainMemory[0x026] = 0x40;
+    mainMemory[0x027] = 0x40;
+
+    // The sprite 8
+    mainMemory[0x028] = 0xF0;
+    mainMemory[0x029] = 0x90;
+    mainMemory[0x02A] = 0xF0;
+    mainMemory[0x02B] = 0x90;
+    mainMemory[0x02C] = 0xF0;
+
+    // The sprite 9
+    mainMemory[0x02D] = 0xF0;
+    mainMemory[0x02E] = 0x90;
+    mainMemory[0x02F] = 0xF0;
+    mainMemory[0x030] = 0x10;
+    mainMemory[0x031] = 0xF0;
+
+    // The sprite A
+    mainMemory[0x032] = 0xF0;
+    mainMemory[0x033] = 0x90;
+    mainMemory[0x034] = 0xF0;
+    mainMemory[0x035] = 0x90;
+    mainMemory[0x036] = 0x90;
+
+    // The sprite B
+    mainMemory[0x037] = 0xE0;
+    mainMemory[0x038] = 0x90;
+    mainMemory[0x039] = 0xE0;
+    mainMemory[0x03A] = 0x90;
+    mainMemory[0x03B] = 0xE0;
+
+    // The sprite C
+    mainMemory[0x03C] = 0xF0;
+    mainMemory[0x03D] = 0x80;
+    mainMemory[0x03E] = 0x80;
+    mainMemory[0x03F] = 0x80;
+    mainMemory[0x040] = 0xF0;
+
+    // The sprite D
+    mainMemory[0x041] = 0xE0;
+    mainMemory[0x042] = 0x90;
+    mainMemory[0x043] = 0x90;
+    mainMemory[0x044] = 0x90;
+    mainMemory[0x045] = 0xE0;
+
+    // The sprite E
+    mainMemory[0x046] = 0xF0;
+    mainMemory[0x047] = 0x80;
+    mainMemory[0x048] = 0xF0;
+    mainMemory[0x049] = 0x80;
+    mainMemory[0x04A] = 0xF0;
+
+    // The sprite F
+    mainMemory[0x04B] = 0xF0;
+    mainMemory[0x04C] = 0x80;
+    mainMemory[0x04D] = 0xF0;
+    mainMemory[0x04E] = 0x80;
+    mainMemory[0x04F] = 0x80;
+}
+
+void CheckForInput(SDL_Event event)
+{
+    if(event.type == SDL_KEYDOWN)
+    {
+        int key = -1 ;
+        switch(event.key.keysym.sym)
+        {
+            case SDLK_x: key = 0;  break;
+            case SDLK_1: key = 1;  break;
+            case SDLK_2: key = 2;  break;
+            case SDLK_3: key = 3;  break;
+            case SDLK_q: key = 4;  break;
+            case SDLK_w: key = 5;  break;
+            case SDLK_e: key = 6;  break;
+            case SDLK_a: key = 7;  break;
+            case SDLK_s: key = 8;  break;
+            case SDLK_d: key = 9;  break;
+            case SDLK_z: key = 10; break;
+            case SDLK_c: key = 11; break;
+            case SDLK_4: key = 12; break;
+            case SDLK_r: key = 13; break;
+            case SDLK_f: key = 14; break;
+            case SDLK_v: key = 15; break;
+            default: break;
+        }
+        if (key != -1)
+        {
+            inputKeys[key] = 0xFF;
+        }
+    }
+    else if(event.type == SDL_KEYUP)
+    {
+        int key = -1 ;
+        switch(event.key.keysym.sym)
+        {
+            case SDLK_x: key = 0;  break;
+            case SDLK_1: key = 1;  break;
+            case SDLK_2: key = 2;  break;
+            case SDLK_3: key = 3;  break;
+            case SDLK_q: key = 4;  break;
+            case SDLK_w: key = 5;  break;
+            case SDLK_e: key = 6;  break;
+            case SDLK_a: key = 7;  break;
+            case SDLK_s: key = 8;  break;
+            case SDLK_d: key = 9;  break;
+            case SDLK_z: key = 10; break;
+            case SDLK_c: key = 11; break;
+            case SDLK_4: key = 12; break;
+            case SDLK_r: key = 13; break;
+            case SDLK_f: key = 14; break;
+            case SDLK_v: key = 15; break;
+            default: break;
+        }
+        if (key != -1)
+        {
+            inputKeys[key] = 0x00;
+        }
+    }
+}
+
+Uint32 DecrementTimers(Uint32 interval, void *param)
+{
+    if(regDT > 0)
+        --regDT;
+    if(regST > 0)
+        --regST;
+    
+    if(regST > 0)
+        printf("\a\n");
+
+    return interval;
 }
 
 WORD Fetch()
@@ -603,57 +809,130 @@ void ExecuteDXYN(WORD inst)
     }
 }
 
+// Skip next instruction if key with name == value of V0 is pressed
 void ExecuteEX9E(WORD inst)
 {
     //printf(" EX9E V%X", (inst & 0x0F00) >> 8);
+    unsigned int x = (inst & 0x0F00) >> 8;
+    unsigned int keyIndex = dataRegisters[x];
+
+    if(inputKeys[keyIndex] == 0xFF)
+        PC += 2;
 }
 
+// Skip next instruction if key with name == value of V0 is NOT pressed
 void ExecuteEXA1(WORD inst)
 {
     //printf(" EXA1 V%X", (inst & 0x0F00) >> 8);
+    unsigned int x = (inst & 0x0F00) >> 8;
+    unsigned int keyIndex = dataRegisters[x];
+
+    if(inputKeys[keyIndex] == 0x00)
+        PC += 2;
 }
 
+// VX = regDT
 void ExecuteFX07(WORD inst)
 {
     //printf(" FX07 V%X", (inst & 0x0F00) >> 8);
+    unsigned int x = (inst & 0x0F00) >> 8;
+
+    dataRegisters[x] = regDT;
 }
 
+// Wait for key press and store key pressed in VX
 void ExecuteFX0A(WORD inst)
 {
     //printf(" FX0A V%X", (inst & 0x0F00) >> 8);
+    unsigned int x = (inst & 0x0F00) >> 8;
+    int i;
+
+    int key = -1;
+    for(i = 0; i < NUM_KEYS; ++i)
+    {
+        if(inputKeys[i] == 0xFF)
+            key = i;
+    }
+
+    if(key == -1)
+        PC -= 2;
+    else
+        dataRegisters[x] = key;
 }
 
+// regDT = VX
 void ExecuteFX15(WORD inst)
 {
     //printf(" FX15 V%X", (inst & 0x0F00) >> 8);
+    unsigned int x = (inst & 0x0F00) >> 8;
+
+    regDT = dataRegisters[x];
 }
 
+// regST = VX
 void ExecuteFX18(WORD inst)
 {
     //printf(" FX18 V%X", (inst & 0x0F00) >> 8);
+    unsigned int x = (inst & 0x0F00) >> 8;
+
+    regST = dataRegisters[x];
+
 }
 
+// regI = regI + VX
 void ExecuteFX1E(WORD inst)
 {
     //printf(" FX1E V%X", (inst & 0x0F00) >> 8);
+    unsigned int x = (inst & 0x0F00) >> 8;
+    regI = regI + dataRegisters[x];
 }
 
+// regI = address of sprite for digit VX
 void ExecuteFX29(WORD inst)
 {
     //printf(" FX29 V%X", (inst & 0x0F00) >> 8);
+    unsigned int x = (inst & 0x0F00) >> 8;
+
+    regI = mainMemory[dataRegisters[x] * 5];
 }
 
+// Write the value of VX as decimal digits in memory starting at address regI
 void ExecuteFX33(WORD inst)
 {
     //printf(" FX33 V%X", (inst & 0x0F00) >> 8);
+    unsigned int x = (inst & 0x0F00) >> 8;
+
+    int hundreds = dataRegisters[x] / 100;
+    int tens = (dataRegisters[x] % 100) / 10;
+    int ones = dataRegisters[x] % 10;
+
+    mainMemory[regI] = hundreds;
+    mainMemory[regI + 1] = tens;
+    mainMemory[regI + 2] = ones;
 }
 
+// Store registers V0 - VX into memory beginning at address regI
 void ExecuteFX55(WORD inst)
 {
     //printf(" FX55 V%X", (inst & 0x0F00) >> 8);
+    unsigned int x = (inst & 0x0F00) >> 8;
+    int i;
+    
+    for(i = 0; i <= x; ++i)
+    {
+        mainMemory[regI + i] = dataRegisters[i];
+    }
 }
 
+// Load registers V0 - VX with values from memory beginning at address regI
 void ExecuteFX65(WORD inst)
 {
     //printf(" FX65 V%X", (inst & 0x0F00) >> 8);
+    unsigned int x = (inst & 0x0F00) >> 8;
+    int i;
+
+    for(i = 0; i <= x; ++i)
+    {
+        dataRegisters[i] = mainMemory[regI + i];
+    }
 }
