@@ -1,4 +1,4 @@
 .vscode/*
 c8games/*
 chip8-emu.exe
-SDL2.dll
+*.dll

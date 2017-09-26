@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <SDL.h>
+#include <SDL_mixer.h>
 
 typedef unsigned char BYTE;
 typedef unsigned short WORD;
@@ -141,7 +142,7 @@ int main (int argc, char **argv)
     SDL_Surface *surface = NULL;
     SDL_Surface *graphics = NULL;
 
-    if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) < 0)
+    if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_AUDIO) < 0)
     {
         printf("SDL ERROR!\nCould not initialize: %s", SDL_GetError());
     }
@@ -173,6 +174,16 @@ int main (int argc, char **argv)
         // }
     }
 
+    if(Mix_OpenAudio(22050, MIX_DEFAULT_FORMAT, 2, 4096) == -1)
+    {
+        printf("SDL ERROR!\nAudio was not initialized: %s", SDL_GetError());
+    }
+    Mix_Chunk *beep = Mix_LoadWAV("beep.wav");
+    if(beep == NULL)
+    {
+        printf("SDL ERROR!\nCouldn't load audio file: %s", SDL_GetError());
+    }
+
     // Disassemble
     // while(PC < inputSize + PROGRAM_START)
     // {
@@ -184,7 +195,7 @@ int main (int argc, char **argv)
     SDL_Event event;
 
     CPUReset();
-    SDL_TimerID timerID = SDL_AddTimer(17, DecrementTimers, NULL);
+    SDL_TimerID timerID = SDL_AddTimer(17, DecrementTimers, beep);
     //While application is running
     while(!quit)
     {
@@ -219,6 +230,9 @@ int main (int argc, char **argv)
         SDL_UpdateWindowSurface(window);
     }
     SDL_RemoveTimer(timerID);
+    Mix_FreeChunk(beep);
+    SDL_FreeSurface(surface);
+    SDL_FreeSurface(graphics);
 
     return 0;
 }
@@ -425,7 +439,7 @@ Uint32 DecrementTimers(Uint32 interval, void *param)
         --regST;
     
     if(regST > 0)
-        printf("\a\n");
+        Mix_PlayChannel(-1, (Mix_Chunk *)param, 0);
 
     return interval;
 }

@@ -16,7 +16,7 @@ LIBRARY_PATHS = -LC:/i686-w64-mingw32/lib
 COMPILER_FLAGS = -g#-w -Wl,-subsystem,windows
 
 #LINKER_FLAGS specifies the libraries we're linking against
-LINKER_FLAGS = -lmingw32 -lSDL2main -lSDL2
+LINKER_FLAGS = -lmingw32 -lSDL2main -lSDL2 -lSDL2_mixer
 
 #OBJ_NAME specifies the name of our exectuable
 OBJ_NAME = chip8-emu
