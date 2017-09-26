@@ -1,202 +1,65 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include <SDL.h>
-#include <SDL_mixer.h>
+//#include <SDL_mixer.h>
+#include "chip8.h"
 
-typedef unsigned char BYTE;
-typedef unsigned short WORD;
-
-#define MEMORY_SIZE 0xFFF
-#define STACK_START 0xEA0
-#define PROGRAM_START 0x200
-#define NUM_REGISTERS 16
-#define NUM_KEYS 16
-
-#define SCREEN_WIDTH 64
-#define SCREEN_HEIGHT 32
-#define CHANNELS 3
-#define MULTIPLIER 10
-#define SPRITE_WIDTH 8
-
-// Program should reside in 0x200 - 0xE9F inclusive
-BYTE mainMemory[MEMORY_SIZE];
-
-BYTE dataRegisters[NUM_REGISTERS];
-BYTE inputKeys[NUM_KEYS];
-
-WORD regI;  // Address register
-WORD regDT; // Delay Timer
-WORD regST; // Sound Timer
-WORD PC;    // Program counter (16 bits but only 12 necessary)
-WORD SP;    // Stack pointer
-
-// 2D array of bytes representing the data on the screen at any given time
-//BYTE screenData[SCREEN_WIDTH * SCREEN_HEIGHT * CHANNELS];
-BYTE screenData[SCREEN_HEIGHT][SCREEN_WIDTH][CHANNELS];
-
-void CPUReset();
-void InitNumericalSprites();
-void CheckForInput(SDL_Event event);
-Uint32 DecrementTimers(Uint32 interval, void *param);
-
-WORD Fetch();
-void DecodeExecute(WORD inst);
-
-void Decode0000(WORD inst);
-void Decode8000(WORD inst);
-void DecodeE000(WORD inst);
-void DecodeF000(WORD inst);
-
-void Execute00E0();
-void Execute00EE();
-void Execute0NNN(WORD inst);
-void Execute1NNN(WORD inst);
-void Execute2NNN(WORD inst);
-void Execute3XNN(WORD inst);
-void Execute4XNN(WORD inst);
-void Execute5XY0(WORD inst);
-void Execute6XNN(WORD inst);
-void Execute7XNN(WORD inst);
-void Execute8XY0(WORD inst);
-void Execute8XY1(WORD inst);
-void Execute8XY2(WORD inst);
-void Execute8XY3(WORD inst);
-void Execute8XY4(WORD inst);
-void Execute8XY5(WORD inst);
-void Execute8XY6(WORD inst);
-void Execute8XY7(WORD inst);
-void Execute8XYE(WORD inst);
-void Execute9XY0(WORD inst);
-void ExecuteANNN(WORD inst);
-void ExecuteBNNN(WORD inst);
-void ExecuteCXNN(WORD inst);
-void ExecuteDXYN(WORD inst);
-void ExecuteEX9E(WORD inst);
-void ExecuteEXA1(WORD inst);
-void ExecuteFX07(WORD inst);
-void ExecuteFX0A(WORD inst);
-void ExecuteFX15(WORD inst);
-void ExecuteFX18(WORD inst);
-void ExecuteFX1E(WORD inst);
-void ExecuteFX29(WORD inst);
-void ExecuteFX33(WORD inst);
-void ExecuteFX55(WORD inst);
-void ExecuteFX65(WORD inst);
-
-int main (int argc, char **argv)
+int main(int argc, char **argv)
 {
-    int execute = 1;
-    WORD inst = 0;
-    long inputSize = 0;
+    WORD inst = 0;      // Current instruction for this cycle
+    long inputSize = 0; // Size of input ROM
 
     // Check for valid usage
-    if (argc != 2)
+    if(argc != 3)
     {
-        fprintf(stderr, "USAGE ERROR!\nCorrect Usage: chip8-emu <rom-file>.");
+        fprintf(stderr, "USAGE ERROR!\nCorrect Usage: chip8-emu <rom-file> <graphics-multiple>.");
         return -1;
     }
     
     // Open ROM file
     FILE *input;
-    if ((input = fopen(argv[1], "rb")) == NULL)
+    if((input = fopen(argv[1], "rb")) == NULL)
     {
         fprintf(stderr, "FILE I/O ERROR!\nCould not open file \"%s\".", argv[1]);
         return -1;
     }
 
-    // Initialize CPU and load ROM into mainMemory
-    CPUReset();
+    // Check for valid multiplier
+    if(atoi(argv[2]) <= 0)
+    {
+        fprintf(stderr, "GRAPHICS ERROR!\n<graphics-multiple> must be a positive integer");
+        return -1;
+    }
+    const unsigned int MULTIPLIER = atoi(argv[2]);
 
     // Obtain filesize
     fseek(input, 0, SEEK_END);
     inputSize = ftell(input);
     rewind(input);
 
+    // Read ROM into mainMemory
     fread(&mainMemory[PROGRAM_START], inputSize, 1, input);
-
     fclose(input);
 
+    // Seed random number generator
     srand(time(NULL));
 
-    // for(int y = 0; y < SCREEN_HEIGHT; ++y) 
-    // {
-    //     for(int x = 0; x < SCREEN_WIDTH; ++x)
-    //     {
-    //         if((x % 2 == 0 && y % 2 == 0) || (x % 2 != 0 && y % 2 != 0))
-    //         {
-    //             screenData[y][x][0] = 0x00;
-    //             screenData[y][x][1] = 0x00;
-    //             screenData[y][x][2] = 0x00;
-    //         }
-    //         else
-    //         {
-    //             screenData[y][x][0] = 0x53;
-    //             screenData[y][x][1] = 0x7D;
-    //             screenData[y][x][2] = 0x55;
-    //         }
-    //     }
-    // }
+    SDL_Window *window = NULL;      // Window rendered to
+    SDL_Surface *surface = NULL;    // Current surface of the window
+    SDL_Surface *graphics = NULL;   // Surface generated from graphics data (screenData)
+    Mix_Chunk *beep = NULL;         // Stores the beep effect
 
-    SDL_Window *window = NULL;
-    SDL_Surface *surface = NULL;
-    SDL_Surface *graphics = NULL;
+    InitializeSDL(&window, &beep, MULTIPLIER);
 
-    if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_AUDIO) < 0)
-    {
-        printf("SDL ERROR!\nCould not initialize: %s", SDL_GetError());
-    }
-    else
-    {
-        window = SDL_CreateWindow("chip8-emu", SDL_WINDOWPOS_UNDEFINED,
-                 SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH * MULTIPLIER,
-                 SCREEN_HEIGHT * MULTIPLIER, SDL_WINDOW_SHOWN);
-        if(window == NULL)
-        {
-            printf("SDL ERROR!\nWindow could not be created: %s", SDL_GetError());
-        }
-        // else
-        // {
-        //     surface = SDL_GetWindowSurface(window);
-        //     graphics = SDL_CreateRGBSurfaceFrom(
-        //         (void *)screenData,
-        //         SCREEN_WIDTH,
-        //         SCREEN_HEIGHT,
-        //         CHANNELS * 8,
-        //         SCREEN_WIDTH * CHANNELS,
-        //         0x0000FF,
-        //         0x00FF00,
-        //         0xFF0000,
-        //         0x000000
-        //     );
-        //     SDL_BlitScaled(graphics, NULL, surface, NULL);
-        //     SDL_UpdateWindowSurface(window);
-        // }
-    }
-
-    if(Mix_OpenAudio(22050, MIX_DEFAULT_FORMAT, 2, 4096) == -1)
-    {
-        printf("SDL ERROR!\nAudio was not initialized: %s", SDL_GetError());
-    }
-    Mix_Chunk *beep = Mix_LoadWAV("beep.wav");
-    if(beep == NULL)
-    {
-        printf("SDL ERROR!\nCouldn't load audio file: %s", SDL_GetError());
-    }
-
-    // Disassemble
-    // while(PC < inputSize + PROGRAM_START)
-    // {
-    //     inst = Fetch();
-    //     DecodeExecute(inst);
-    // }
-
-    int quit = 0;
-    SDL_Event event;
+    int quit = 0;       // Continue execution until the user quits
+    SDL_Event event;    // Represents user input
 
     CPUReset();
+
+    // Begin countdown registers
     SDL_TimerID timerID = SDL_AddTimer(17, DecrementTimers, beep);
-    //While application is running
+
+    // Main Loop. One iteration represents a single chip8 cycle
     while(!quit)
     {
         //Handle events on queue
@@ -211,9 +74,11 @@ int main (int argc, char **argv)
             }
         }
 
+        // Fetch and execute inst, affecting cpu state
         inst = Fetch();
         DecodeExecute(inst);
 
+        // Draw new graphics based on changed state
         surface = SDL_GetWindowSurface(window);
         graphics = SDL_CreateRGBSurfaceFrom(
             (void *)screenData,
@@ -229,12 +94,49 @@ int main (int argc, char **argv)
         SDL_BlitScaled(graphics, NULL, surface, NULL);
         SDL_UpdateWindowSurface(window);
     }
+
+    // SDL cleanup
     SDL_RemoveTimer(timerID);
     Mix_FreeChunk(beep);
     SDL_FreeSurface(surface);
     SDL_FreeSurface(graphics);
 
     return 0;
+}
+
+void InitializeSDL(SDL_Window **window, Mix_Chunk **beep, const unsigned int MULTIPLIER)
+{
+    // Initialize SDL
+    if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_AUDIO) < 0)
+    {
+        fprintf(stderr, "SDL ERROR!\nCould not initialize: %s", SDL_GetError());
+        exit(-1);
+    }
+    else
+    {
+        // Create window
+        *window = SDL_CreateWindow("chip8-emu", SDL_WINDOWPOS_UNDEFINED,
+                  SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH * MULTIPLIER,
+                  SCREEN_HEIGHT * MULTIPLIER, SDL_WINDOW_SHOWN);
+        if(*window == NULL)
+        {
+            fprintf(stderr, "SDL ERROR!\nWindow could not be created: %s", SDL_GetError());
+            exit(-1);
+        }
+    }
+
+    // Initialize SDL_mixer extension
+    if(Mix_OpenAudio(22050, MIX_DEFAULT_FORMAT, 2, 4096) == -1)
+    {
+        fprintf(stderr, "SDL ERROR!\nAudio was not initialized: %s", SDL_GetError());
+    }
+
+    // Load beep sound effect
+    *beep = Mix_LoadWAV("beep.wav");
+    if(*beep == NULL)
+    {
+        fprintf(stderr, "SDL ERROR!\nCouldn't load audio file: %s", SDL_GetError());
+    }
 }
 
 void CPUReset()
@@ -552,9 +454,9 @@ void Execute00E0()
 void Execute00EE()
 {
     //printf(" 00EE");
-    //WORD lo = mainMemory[--SP];
-    //WORD hi = mainMemory[--SP] << 8; 
-    PC = mainMemory[--SP] | (mainMemory[--SP] << 8);
+    WORD lo = mainMemory[--SP];
+    WORD hi = mainMemory[--SP] << 8; 
+    PC = lo | hi;
 }
 
 void Execute0NNN(WORD inst)
@@ -705,7 +607,6 @@ void Execute8XY6(WORD inst)
 {
     //printf(" 8XY6 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
     unsigned int x = (inst & 0x0F00) >> 8;
-    unsigned int y = (inst & 0x00F0) >> 4;
 
     dataRegisters[0xF] = dataRegisters[x] << 7 >> 7;
 
@@ -732,7 +633,6 @@ void Execute8XYE(WORD inst)
 {
     //printf(" 8XYE V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
     unsigned int x = (inst & 0x0F00) >> 8;
-    unsigned int y = (inst & 0x00F0) >> 4;
 
     dataRegisters[0xF] = dataRegisters[x] >> 7;
 
