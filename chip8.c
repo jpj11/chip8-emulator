@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 #include <SDL.h>
 
 typedef unsigned char BYTE;
@@ -107,6 +108,8 @@ int main (int argc, char **argv)
     fread(&mainMemory[PROGRAM_START], inputSize, 1, input);
 
     fclose(input);
+
+    srand(time(NULL));
 
     // for(int y = 0; y < SCREEN_HEIGHT; ++y) 
     // {
@@ -325,10 +328,13 @@ void Execute00E0()
     }
 }
 
+// Return
 void Execute00EE()
 {
     //printf(" 00EE");
-    PC = mainMemory[SP--];
+    //WORD lo = mainMemory[--SP];
+    //WORD hi = mainMemory[--SP] << 8; 
+    PC = mainMemory[--SP] | (mainMemory[--SP] << 8);
 }
 
 void Execute0NNN(WORD inst)
@@ -336,32 +342,53 @@ void Execute0NNN(WORD inst)
     //printf(" 0NNN 0x%03X", inst & 0x0FFF);
 }
 
+// Jump/GoTo: jmp NNN
 void Execute1NNN(WORD inst)
 {
     //printf(" 1NNN 0x%03X", inst & 0x0FFF);
+    PC = inst & 0x0FFF;
 }
 
 // Call subroutine: call NNN
 void Execute2NNN(WORD inst)
 {
     //printf(" 2NNN 0x%03X", inst & 0x0FFF);
-    mainMemory[SP++] = PC;
+    mainMemory[SP++] = (PC & 0xFF00) >> 8;
+    mainMemory[SP++] = PC & 0x00FF;
     PC = inst & 0x0FFF;
 }
 
+// Skip next instruction if VX == NN
 void Execute3XNN(WORD inst)
 {
     //printf(" 3XNN V%X, %d", (inst & 0x0F00) >> 8, inst & 0x00FF);
+    unsigned int x = (inst & 0x0F00) >> 8;
+    int n = inst & 0x00FF;
+
+    if(dataRegisters[x] == n)
+        PC += 2;
 }
 
+// Skip next instruction if VX != NN
 void Execute4XNN(WORD inst)
 {
     //printf(" 4XNN V%X, %d", (inst & 0x0F00) >> 8, inst & 0x00FF);
+    unsigned int x = (inst & 0x0F00) >> 8;
+    int n = inst & 0x00FF;
+
+    if(dataRegisters[x] != n)
+        PC += 2;
 }
 
+// Skip next instruction if VX == VY
 void Execute5XY0(WORD inst)
 {
     //printf(" 5XY0 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
+    unsigned int x = (inst & 0x0F00) >> 8;
+    unsigned int y = (inst & 0x00F0) >> 4;
+
+    if(dataRegisters[x] == dataRegisters[y])
+        PC += 2;
 }
 
 // Constant set: Vx = NN
@@ -372,59 +399,135 @@ void Execute6XNN(WORD inst)
     dataRegisters[x] = inst & 0x00FF;
 }
 
+// Increment VX by NN. Carry is NOT affected
 void Execute7XNN(WORD inst)
 {
     //printf(" 7XNN V%X, %d", (inst & 0x0F00) >> 8, inst & 0x00FF);
+    unsigned int x = (inst & 0x0F00) >> 8;
+    int n = inst & 0x00FF;
+
+    dataRegisters[x] += n;
 }
 
+// VX = VY
 void Execute8XY0(WORD inst)
 {
     //printf(" 8XY0 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
+    unsigned int x = (inst & 0x0F00) >> 8;
+    unsigned int y = (inst & 0x00F0) >> 4;
+
+    dataRegisters[x] = dataRegisters[y];
 }
 
+// VX = VX | VY
 void Execute8XY1(WORD inst)
 {
     //printf(" 8XY1 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
+    unsigned int x = (inst & 0x0F00) >> 8;
+    unsigned int y = (inst & 0x00F0) >> 4;
+
+    dataRegisters[x] |= dataRegisters[y];
 }
 
+// VX = VX & VY
 void Execute8XY2(WORD inst)
 {
     //printf(" 8XY2 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
+    unsigned int x = (inst & 0x0F00) >> 8;
+    unsigned int y = (inst & 0x00F0) >> 4;
+
+    dataRegisters[x] &= dataRegisters[y];
 }
 
+// VX = VX ^ VY
 void Execute8XY3(WORD inst)
 {
     //printf(" 8XY3 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
+    unsigned int x = (inst & 0x0F00) >> 8;
+    unsigned int y = (inst & 0x00F0) >> 4;
+
+    dataRegisters[x] ^= dataRegisters[y];
 }
 
+// VX = VX + VY. Set VF if carry, otherwise unset
 void Execute8XY4(WORD inst)
 {
     //printf(" 8XY4 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
+    unsigned int x = (inst & 0x0F00) >> 8;
+    unsigned int y = (inst & 0x00F0) >> 4;
+
+    WORD check = dataRegisters[x] + dataRegisters[y];
+    if(check > 0xFF)
+        dataRegisters[0xF] = 1;
+    else
+        dataRegisters[0xF] = 0;
+
+    dataRegisters[x] += dataRegisters[y];
 }
 
+// VX = VX - VY. Unset VF if borrow, otherwise set
 void Execute8XY5(WORD inst)
 {
     //printf(" 8XY5 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
+    unsigned int x = (inst & 0x0F00) >> 8;
+    unsigned int y = (inst & 0x00F0) >> 4;
+
+    if(dataRegisters[x] > dataRegisters[y])
+        dataRegisters[0xF] = 1;
+    else
+        dataRegisters[0xF] = 0;
+
+    dataRegisters[x] = dataRegisters[x] - dataRegisters[y];
 }
 
+// VX = VX >> 1. VF is set to least significant bit of VY before shift
 void Execute8XY6(WORD inst)
 {
     //printf(" 8XY6 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
+    unsigned int x = (inst & 0x0F00) >> 8;
+    unsigned int y = (inst & 0x00F0) >> 4;
+
+    dataRegisters[0xF] = dataRegisters[x] << 7 >> 7;
+
+    dataRegisters[x] >>= 1;
 }
 
+// VX = VY - VX. Unset VF if borrow, otherwise set
 void Execute8XY7(WORD inst)
 {
     //printf(" 8XY7 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
+    unsigned int x = (inst & 0x0F00) >> 8;
+    unsigned int y = (inst & 0x00F0) >> 4;
+
+    if(dataRegisters[y] > dataRegisters[x])
+        dataRegisters[0xF] = 1;
+    else
+        dataRegisters[0xF] = 0;
+
+    dataRegisters[x] = dataRegisters[y] - dataRegisters[x];
 }
 
+// VX = VX >> 1. VF is set to least significant bit of VY before shift
 void Execute8XYE(WORD inst)
 {
     //printf(" 8XYE V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
+    unsigned int x = (inst & 0x0F00) >> 8;
+    unsigned int y = (inst & 0x00F0) >> 4;
+
+    dataRegisters[0xF] = dataRegisters[x] >> 7;
+
+    dataRegisters[x] <<= 1;
 }
 
+// Skip next instruction if VX != VY
 void Execute9XY0(WORD inst)
 {
     //printf(" 9XY0 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
+    unsigned int x = (inst & 0x0F00) >> 8;
+    unsigned int y = (inst & 0x00F0) >> 4;
+
+    if(dataRegisters[x] != dataRegisters[y])
+        PC += 2;
 }
 
 // Set address register: I = NNN
@@ -434,14 +537,23 @@ void ExecuteANNN(WORD inst)
     regI = inst & 0x0FFF;
 }
 
+// Jump to NNN plus the value of V0
 void ExecuteBNNN(WORD inst)
 {
     //printf(" BNNN 0x%03X", inst & 0x0FFF);
+    int n = inst & 0x0FFF;
+
+    PC = n + dataRegisters[0];
 }
 
+// VX = rand() & NN
 void ExecuteCXNN(WORD inst)
 {
     //printf(" CXNN V%X, %d", (inst & 0x0F00) >> 8, inst & 0x00FF);
+    unsigned int x = (inst & 0x0F00) >> 8;
+    int n = inst & 0x00FF;
+
+    dataRegisters[x] = (rand() % 256) & n;
 }
 
 // Draw to screenData
