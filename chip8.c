@@ -70,9 +70,7 @@ int main(int argc, char **argv)
 
             //User requests quit
             if(event.type == SDL_QUIT )
-            {
                 quit = 1;
-            }
         }
 
         // Fetch and execute inst, affecting cpu state
@@ -116,16 +114,13 @@ int InitializeSDL(SDL_Window **window, Mix_Chunk **beep, const unsigned int MULT
 
     // Initialize SDL_mixer extension
     if(Mix_OpenAudio(22050, MIX_DEFAULT_FORMAT, 2, 4096) == -1)
-    {
         fprintf(stderr, "SDL ERROR!\nAudio was not initialized: %s", SDL_GetError());
-    }
 
     // Load beep sound effect
     *beep = Mix_LoadWAV("beep.wav");
     if(*beep == NULL)
-    {
         fprintf(stderr, "SDL ERROR!\nCouldn't load audio file: %s", SDL_GetError());
-    }
+
     
     return 0;
 }
@@ -140,9 +135,7 @@ void InitializeCPU()
     regDT = 0x000;
     regST = 0x000;
     for(i = 0; i < NUM_REGISTERS; ++i)
-    {
         dataRegisters[i] = 0x00;
-    }
 
     // Initialize pointers to appropriate values
     PC = PROGRAM_START;
@@ -153,9 +146,7 @@ void InitializeCPU()
     
     // Initialize all keys to be unpressed
     for(i = 0; i < NUM_KEYS; ++i)
-    {
         inputKeys[i] = 0x00;
-    }
 }
 
 // Write hard-coded stock sprites into reserved section of memory. Each sprite
@@ -479,11 +470,9 @@ void DecodeF000(WORD inst)
     }
 }
 
-// Clear the screen
+// 00E0 - CLS : Clear the screen
 void Execute00E0()
 {
-    // printf(" 00E0");
-
     for(int y = 0; y < SCREEN_HEIGHT; ++y) 
     {
         for(int x = 0; x < SCREEN_WIDTH; ++x)
@@ -495,40 +484,39 @@ void Execute00E0()
     }
 }
 
-// Return
+// 00EE - RET : Return from subroutine
 void Execute00EE()
 {
-    //printf(" 00EE");
+    // Memory is indexed by BYTE so fetch both BYTES of the WORD in memory at SP
     WORD lo = mainMemory[--SP];
     WORD hi = mainMemory[--SP] << 8; 
     PC = lo | hi;
 }
 
+// 0NNN - SYS addr : Jump to machine code routine at NNN
 void Execute0NNN(WORD inst)
 {
-    //printf(" 0NNN 0x%03X", inst & 0x0FFF);
+    // This is only necessary in actual hardware
 }
 
-// Jump/GoTo: jmp NNN
+// 1NNN - JP addr : Jump to location NNN
 void Execute1NNN(WORD inst)
 {
-    //printf(" 1NNN 0x%03X", inst & 0x0FFF);
     PC = inst & 0x0FFF;
 }
 
-// Call subroutine: call NNN
+// 2NNN - CALL addr : Call subroutine at NNN
 void Execute2NNN(WORD inst)
 {
-    //printf(" 2NNN 0x%03X", inst & 0x0FFF);
+    // Memory is indexed by BYTE so store both BYTES of the WORD in memory at SP
     mainMemory[SP++] = (PC & 0xFF00) >> 8;
     mainMemory[SP++] = PC & 0x00FF;
     PC = inst & 0x0FFF;
 }
 
-// Skip next instruction if VX == NN
+// 3XNN - SE Vx, NN : Skip next instruction if Vx == NN
 void Execute3XNN(WORD inst)
 {
-    //printf(" 3XNN V%X, %d", (inst & 0x0F00) >> 8, inst & 0x00FF);
     unsigned int x = (inst & 0x0F00) >> 8;
     int n = inst & 0x00FF;
 
@@ -536,10 +524,9 @@ void Execute3XNN(WORD inst)
         PC += 2;
 }
 
-// Skip next instruction if VX != NN
+// 4XNN - SNE Vx, NN : Skip next instruction if Vx != NN
 void Execute4XNN(WORD inst)
 {
-    //printf(" 4XNN V%X, %d", (inst & 0x0F00) >> 8, inst & 0x00FF);
     unsigned int x = (inst & 0x0F00) >> 8;
     int n = inst & 0x00FF;
 
@@ -547,10 +534,9 @@ void Execute4XNN(WORD inst)
         PC += 2;
 }
 
-// Skip next instruction if VX == VY
+// 5XY0 - SE Vx, Vy : Skip next instruction if Vx == Vy
 void Execute5XY0(WORD inst)
 {
-    //printf(" 5XY0 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
     unsigned int x = (inst & 0x0F00) >> 8;
     unsigned int y = (inst & 0x00F0) >> 4;
 
@@ -558,71 +544,65 @@ void Execute5XY0(WORD inst)
         PC += 2;
 }
 
-// Constant set: Vx = NN
+// 6XNN - LD Vx, NN : Load NN into Vx (Vx == NN)
 void Execute6XNN(WORD inst)
 {
-    //printf(" 6XNN V%X, %d", (inst & 0x0F00) >> 8, inst & 0x00FF);
     unsigned int x = (inst & 0x0F00) >> 8;
     dataRegisters[x] = inst & 0x00FF;
 }
 
-// Increment VX by NN. Carry is NOT affected
+// 7XNN - ADD Vx, NN : Add NN to Vx and store result into Vx
 void Execute7XNN(WORD inst)
 {
-    //printf(" 7XNN V%X, %d", (inst & 0x0F00) >> 8, inst & 0x00FF);
     unsigned int x = (inst & 0x0F00) >> 8;
     int n = inst & 0x00FF;
 
     dataRegisters[x] += n;
 }
 
-// VX = VY
+// 8XY0 - LD Vx, Vy : Load Vy into Vx (Vx == Vy)
 void Execute8XY0(WORD inst)
 {
-    //printf(" 8XY0 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
     unsigned int x = (inst & 0x0F00) >> 8;
     unsigned int y = (inst & 0x00F0) >> 4;
 
     dataRegisters[x] = dataRegisters[y];
 }
 
-// VX = VX | VY
+// 8XY1 - OR Vx, Vy : Bitwise or Vx and Vy and store result into Vx
 void Execute8XY1(WORD inst)
 {
-    //printf(" 8XY1 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
     unsigned int x = (inst & 0x0F00) >> 8;
     unsigned int y = (inst & 0x00F0) >> 4;
 
     dataRegisters[x] |= dataRegisters[y];
 }
 
-// VX = VX & VY
+// 8XY2 - AND Vx, Vy : Bitwise and Vx and Vy and store result into Vx
 void Execute8XY2(WORD inst)
 {
-    //printf(" 8XY2 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
     unsigned int x = (inst & 0x0F00) >> 8;
     unsigned int y = (inst & 0x00F0) >> 4;
 
     dataRegisters[x] &= dataRegisters[y];
 }
 
-// VX = VX ^ VY
+// 8XY3 - XOR Vx, Vy : Bitwise xor Vx and Vy and store result into Vx
 void Execute8XY3(WORD inst)
 {
-    //printf(" 8XY3 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
     unsigned int x = (inst & 0x0F00) >> 8;
     unsigned int y = (inst & 0x00F0) >> 4;
 
     dataRegisters[x] ^= dataRegisters[y];
 }
 
-// VX = VX + VY. Set VF if carry, otherwise unset
+// 8XY4 - ADD Vx, Vy : Add Vx and Vy and store result into Vx
 void Execute8XY4(WORD inst)
 {
-    //printf(" 8XY4 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
     unsigned int x = (inst & 0x0F00) >> 8;
     unsigned int y = (inst & 0x00F0) >> 4;
 
+    // Check for carry and set VF appropriately
     WORD check = dataRegisters[x] + dataRegisters[y];
     if(check > 0xFF)
         dataRegisters[0xF] = 1;
@@ -632,13 +612,13 @@ void Execute8XY4(WORD inst)
     dataRegisters[x] += dataRegisters[y];
 }
 
-// VX = VX - VY. Unset VF if borrow, otherwise set
+// 8XY5 - SUB Vx, Vy : Subtract Vy from Vx and store result into Vx
 void Execute8XY5(WORD inst)
 {
-    //printf(" 8XY5 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
     unsigned int x = (inst & 0x0F00) >> 8;
     unsigned int y = (inst & 0x00F0) >> 4;
 
+    // Check for borrow and set VF appropriately
     if(dataRegisters[x] > dataRegisters[y])
         dataRegisters[0xF] = 1;
     else
@@ -647,24 +627,24 @@ void Execute8XY5(WORD inst)
     dataRegisters[x] = dataRegisters[x] - dataRegisters[y];
 }
 
-// VX = VX >> 1. VF is set to least significant bit of VY before shift
+// 8XY6 - SHR Vx {, Vy} : Set Vx to Vx >> 1
 void Execute8XY6(WORD inst)
 {
-    //printf(" 8XY6 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
     unsigned int x = (inst & 0x0F00) >> 8;
 
+    // Set VF to the least significant bit of Vx
     dataRegisters[0xF] = dataRegisters[x] << 7 >> 7;
 
     dataRegisters[x] >>= 1;
 }
 
-// VX = VY - VX. Unset VF if borrow, otherwise set
+// 8XY7 - SUBN Vx, Vy : Subtract Vx from Vy and store result into Vx
 void Execute8XY7(WORD inst)
 {
-    //printf(" 8XY7 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
     unsigned int x = (inst & 0x0F00) >> 8;
     unsigned int y = (inst & 0x00F0) >> 4;
 
+    // Check for borrow and set VF appropriately
     if(dataRegisters[y] > dataRegisters[x])
         dataRegisters[0xF] = 1;
     else
@@ -673,21 +653,20 @@ void Execute8XY7(WORD inst)
     dataRegisters[x] = dataRegisters[y] - dataRegisters[x];
 }
 
-// VX = VX >> 1. VF is set to least significant bit of VY before shift
+// 8XY6 - SHL Vx {, Vy} : Set Vx to Vx << 1
 void Execute8XYE(WORD inst)
 {
-    //printf(" 8XYE V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
     unsigned int x = (inst & 0x0F00) >> 8;
 
+    // Set VF to the least significant bit of Vx
     dataRegisters[0xF] = dataRegisters[x] >> 7;
 
     dataRegisters[x] <<= 1;
 }
 
-// Skip next instruction if VX != VY
+// 9XY0 - SNE Vx, Vy : Skip next instruction if Vx != Vy
 void Execute9XY0(WORD inst)
 {
-    //printf(" 9XY0 V%X, V%X", (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4);
     unsigned int x = (inst & 0x0F00) >> 8;
     unsigned int y = (inst & 0x00F0) >> 4;
 
@@ -695,37 +674,32 @@ void Execute9XY0(WORD inst)
         PC += 2;
 }
 
-// Set address register: I = NNN
+// ANNN - LD I, addr : Set regI to NNN
 void ExecuteANNN(WORD inst)
 {
-    //printf(" ANNN 0x%03X", inst & 0x0FFF);
     regI = inst & 0x0FFF;
 }
 
-// Jump to NNN plus the value of V0
+// BNNN - JP V0, addr : Jump to address NNN + V0
 void ExecuteBNNN(WORD inst)
 {
-    //printf(" BNNN 0x%03X", inst & 0x0FFF);
     int n = inst & 0x0FFF;
-
     PC = n + dataRegisters[0];
 }
 
-// VX = rand() & NN
+// CXNN - RND Vx, NN : Set Vx to random BYTE & NN
 void ExecuteCXNN(WORD inst)
 {
-    //printf(" CXNN V%X, %d", (inst & 0x0F00) >> 8, inst & 0x00FF);
     unsigned int x = (inst & 0x0F00) >> 8;
     int n = inst & 0x00FF;
 
     dataRegisters[x] = (rand() % 256) & n;
 }
 
-// Draw to screenData
+// DXYN - DRW Vx, Vy, N : Draw N BYTE sprite from memory at regI to screen data starting
+// at position Vx, Vy
 void ExecuteDXYN(WORD inst)
 {
-    //printf(" DXYN V%X, V%X, %d",
-    //    (inst & 0x0F00) >> 8, (inst & 0x00F0) >> 4, inst & 0x000F);
     unsigned int regX = (inst & 0x0F00) >> 8;
     unsigned int regY = (inst & 0x00F0) >> 4;
     unsigned int startX = dataRegisters[regX];
@@ -736,30 +710,38 @@ void ExecuteDXYN(WORD inst)
     int drawColorR, drawColorG, drawColorB;
     dataRegisters[0xF] = 0;
 
+    // For each horizontal line in the sprite (where height == N)...
     for(line = 0; line < height; ++line)
     {
+        // Load sprite data from memory
         BYTE data = mainMemory[regI + line];
 
+        // For each pixel in the horizontal line...
         for(pixelPos = 0; pixelPos < SPRITE_WIDTH; ++pixelPos)
         {
             mask = 1 << (SPRITE_WIDTH - pixelPos - 1);
 
+            // If a pixel should be flipped
             if ((data & mask) != 0x00)
             {
+                // Determine position to be fliped
                 x = startX + pixelPos;
                 y = startY + line;
                 drawColorR = drawColorG = drawColorB = 0x00;
 
+                // If a pixel is to be erased
                 if(screenData[y][x][0] == 0x00 &&
                    screenData[y][x][1] == 0x00 &&
                    screenData[y][x][2] == 0x00)
                 {
+                    // Set VF and change color to erase pixel
                     dataRegisters[0xF] = 1;
                     drawColorR = 0x53;
                     drawColorG = 0x7D;
                     drawColorB = 0x55;
                 }
 
+                // Draw pixel to screen
                 screenData[y][x][0] = drawColorR;
                 screenData[y][x][1] = drawColorG;
                 screenData[y][x][2] = drawColorB;
@@ -768,10 +750,9 @@ void ExecuteDXYN(WORD inst)
     }
 }
 
-// Skip next instruction if key with name == value of V0 is pressed
+// EX9E - SKP Vx : Skip next instruction if key Vx is pressed
 void ExecuteEX9E(WORD inst)
 {
-    //printf(" EX9E V%X", (inst & 0x0F00) >> 8);
     unsigned int x = (inst & 0x0F00) >> 8;
     unsigned int keyIndex = dataRegisters[x];
 
@@ -779,10 +760,9 @@ void ExecuteEX9E(WORD inst)
         PC += 2;
 }
 
-// Skip next instruction if key with name == value of V0 is NOT pressed
+// EXA1 = SKNP Vx : Skip next instruction if key VX is NOT pressed
 void ExecuteEXA1(WORD inst)
 {
-    //printf(" EXA1 V%X", (inst & 0x0F00) >> 8);
     unsigned int x = (inst & 0x0F00) >> 8;
     unsigned int keyIndex = dataRegisters[x];
 
@@ -790,19 +770,16 @@ void ExecuteEXA1(WORD inst)
         PC += 2;
 }
 
-// VX = regDT
+// FX07 - LD Vx, DT : Set Vx to the value of the delay timer
 void ExecuteFX07(WORD inst)
 {
-    //printf(" FX07 V%X", (inst & 0x0F00) >> 8);
     unsigned int x = (inst & 0x0F00) >> 8;
-
     dataRegisters[x] = regDT;
 }
 
-// Wait for key press and store key pressed in VX
+// FX0A - LD Vx, K : Load Vx with the key that was pressed
 void ExecuteFX0A(WORD inst)
 {
-    //printf(" FX0A V%X", (inst & 0x0F00) >> 8);
     unsigned int x = (inst & 0x0F00) >> 8;
     int i;
 
@@ -813,52 +790,44 @@ void ExecuteFX0A(WORD inst)
             key = i;
     }
 
+    // This is a blocking operation. Repeat until a key is pressed
     if(key == -1)
         PC -= 2;
     else
         dataRegisters[x] = key;
 }
 
-// regDT = VX
+// FX15 - LD DT, Vx : Set the delay timer to the value of Vx
 void ExecuteFX15(WORD inst)
 {
-    //printf(" FX15 V%X", (inst & 0x0F00) >> 8);
     unsigned int x = (inst & 0x0F00) >> 8;
-
     regDT = dataRegisters[x];
 }
 
-// regST = VX
+// FX18 - LD ST, Vx : Set the sound timer to the value of Vx
 void ExecuteFX18(WORD inst)
 {
-    //printf(" FX18 V%X", (inst & 0x0F00) >> 8);
     unsigned int x = (inst & 0x0F00) >> 8;
-
     regST = dataRegisters[x];
-
 }
 
-// regI = regI + VX
+// FX1E - ADD I, Vx : Set regI to itself plus the value of Vx
 void ExecuteFX1E(WORD inst)
 {
-    //printf(" FX1E V%X", (inst & 0x0F00) >> 8);
     unsigned int x = (inst & 0x0F00) >> 8;
     regI = regI + dataRegisters[x];
 }
 
-// regI = address of sprite for digit VX
+// FX29 - LD F, Vx : Set regI to the location for the hex sprite in Vx
 void ExecuteFX29(WORD inst)
 {
-    //printf(" FX29 V%X", (inst & 0x0F00) >> 8);
     unsigned int x = (inst & 0x0F00) >> 8;
-
     regI = mainMemory[dataRegisters[x] * 5];
 }
 
-// Write the value of VX as decimal digits in memory starting at address regI
+// FX33 - LD B, Vx : Store a decimal representation of Vx in memory at regI to regI + 2
 void ExecuteFX33(WORD inst)
 {
-    //printf(" FX33 V%X", (inst & 0x0F00) >> 8);
     unsigned int x = (inst & 0x0F00) >> 8;
 
     int hundreds = dataRegisters[x] / 100;
@@ -870,28 +839,22 @@ void ExecuteFX33(WORD inst)
     mainMemory[regI + 2] = ones;
 }
 
-// Store registers V0 - VX into memory beginning at address regI
+// FX55 - LD [I], Vx : Store registers V0 through Vx into memory at regI
 void ExecuteFX55(WORD inst)
 {
-    //printf(" FX55 V%X", (inst & 0x0F00) >> 8);
     unsigned int x = (inst & 0x0F00) >> 8;
     int i;
     
     for(i = 0; i <= x; ++i)
-    {
         mainMemory[regI + i] = dataRegisters[i];
-    }
 }
 
-// Load registers V0 - VX with values from memory beginning at address regI
+// FX65 - LD Vx, [I] : Load registers V0 through Vx from memory at regI
 void ExecuteFX65(WORD inst)
 {
-    //printf(" FX65 V%X", (inst & 0x0F00) >> 8);
     unsigned int x = (inst & 0x0F00) >> 8;
     int i;
 
     for(i = 0; i <= x; ++i)
-    {
         dataRegisters[i] = mainMemory[regI + i];
-    }
 }
