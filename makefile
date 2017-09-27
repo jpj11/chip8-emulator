@@ -1,11 +1,11 @@
 #OBJS specifies which files to compile as part of the project
-OBJS = chip8.h chip8.c
+OBJS = chip8.c
 
 #CC specifies which compiler we're using
 CC = gcc
 
 #INCLUDE_PATHS specifies the additional include paths we'll need
-INCLUDE_PATHS = -IC:/i686-w64-mingw32/include/SDL2
+INCLUDE_PATHS = -IC:/i686-w64-mingw32/include
 
 #LIBRARY_PATHS specifies the additional library paths we'll need
 LIBRARY_PATHS = -LC:/i686-w64-mingw32/lib
