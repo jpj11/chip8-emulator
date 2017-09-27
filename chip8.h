@@ -30,11 +30,12 @@ WORD SP;    // Stack pointer
 // 3D array of bytes representing the data on the screen at any given time
 BYTE screenData[SCREEN_HEIGHT][SCREEN_WIDTH][CHANNELS];
 
-void InitializeSDL(SDL_Window **window, Mix_Chunk **beep, const unsigned int MULTIPLIER);
+int InitializeSDL(SDL_Window **window, Mix_Chunk **beep, const unsigned int MULTIPLIER);
 
-void CPUReset();
+void InitializeCPU();
 void InitNumericalSprites();
 void CheckForInput(SDL_Event event);
+void Draw(SDL_Window **window, SDL_Surface **surface, SDL_Surface **graphics);
 Uint32 DecrementTimers(Uint32 interval, void *param);
 
 WORD Fetch();

@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-//#include <SDL_mixer.h>
 #include "chip8.h"
 
 int main(int argc, char **argv)
@@ -49,12 +48,14 @@ int main(int argc, char **argv)
     SDL_Surface *graphics = NULL;   // Surface generated from graphics data (screenData)
     Mix_Chunk *beep = NULL;         // Stores the beep effect
 
-    InitializeSDL(&window, &beep, MULTIPLIER);
+    // Non-zero return indicates unrecoverable SDL initialization error. Abort
+    if(InitializeSDL(&window, &beep, MULTIPLIER) != 0)
+        return -1;
 
     int quit = 0;       // Continue execution until the user quits
     SDL_Event event;    // Represents user input
 
-    CPUReset();
+    InitializeCPU();
 
     // Begin countdown registers
     SDL_TimerID timerID = SDL_AddTimer(17, DecrementTimers, beep);
@@ -79,20 +80,7 @@ int main(int argc, char **argv)
         DecodeExecute(inst);
 
         // Draw new graphics based on changed state
-        surface = SDL_GetWindowSurface(window);
-        graphics = SDL_CreateRGBSurfaceFrom(
-            (void *)screenData,
-            SCREEN_WIDTH,
-            SCREEN_HEIGHT,
-            CHANNELS * 8,
-            SCREEN_WIDTH * CHANNELS,
-            0x0000FF,
-            0x00FF00,
-            0xFF0000,
-            0x000000
-        );
-        SDL_BlitScaled(graphics, NULL, surface, NULL);
-        SDL_UpdateWindowSurface(window);
+        Draw(&window, &surface, &graphics);
     }
 
     // SDL cleanup
@@ -104,13 +92,14 @@ int main(int argc, char **argv)
     return 0;
 }
 
-void InitializeSDL(SDL_Window **window, Mix_Chunk **beep, const unsigned int MULTIPLIER)
+// General SDL plumbing...
+int InitializeSDL(SDL_Window **window, Mix_Chunk **beep, const unsigned int MULTIPLIER)
 {
     // Initialize SDL
     if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_AUDIO) < 0)
     {
         fprintf(stderr, "SDL ERROR!\nCould not initialize: %s", SDL_GetError());
-        exit(-1);
+        return -1;
     }
     else
     {
@@ -121,7 +110,7 @@ void InitializeSDL(SDL_Window **window, Mix_Chunk **beep, const unsigned int MUL
         if(*window == NULL)
         {
             fprintf(stderr, "SDL ERROR!\nWindow could not be created: %s", SDL_GetError());
-            exit(-1);
+            return -1;
         }
     }
 
@@ -137,27 +126,40 @@ void InitializeSDL(SDL_Window **window, Mix_Chunk **beep, const unsigned int MUL
     {
         fprintf(stderr, "SDL ERROR!\nCouldn't load audio file: %s", SDL_GetError());
     }
+    
+    return 0;
 }
 
-void CPUReset()
+// Set CPU constructs to appropriate values for initial execution
+void InitializeCPU()
 {
     int i;
+
+    // Zero out all registers
     regI = 0x000;
     regDT = 0x000;
     regST = 0x000;
-    PC = PROGRAM_START;
-    SP = STACK_START;
-    InitNumericalSprites();
     for(i = 0; i < NUM_REGISTERS; ++i)
     {
         dataRegisters[i] = 0x00;
     }
+
+    // Initialize pointers to appropriate values
+    PC = PROGRAM_START;
+    SP = STACK_START;
+
+    // Initialize stock hexadecimal sprites
+    InitNumericalSprites();
+    
+    // Initialize all keys to be unpressed
     for(i = 0; i < NUM_KEYS; ++i)
     {
         inputKeys[i] = 0x00;
     }
 }
 
+// Write hard-coded stock sprites into reserved section of memory. Each sprite
+// represents a hexadecimal digit.
 void InitNumericalSprites()
 {
     // The sprite 0
@@ -273,10 +275,13 @@ void InitNumericalSprites()
     mainMemory[0x04F] = 0x80;
 }
 
+// Check parameter event for keyboard input from user
 void CheckForInput(SDL_Event event)
 {
+    // If a key is pressed...
     if(event.type == SDL_KEYDOWN)
     {
+        // ...find out which key and...
         int key = -1 ;
         switch(event.key.keysym.sym)
         {
@@ -300,11 +305,14 @@ void CheckForInput(SDL_Event event)
         }
         if (key != -1)
         {
+            // ...activate that key
             inputKeys[key] = 0xFF;
         }
     }
+    // If a key is released...
     else if(event.type == SDL_KEYUP)
     {
+        // ...find out which key and...
         int key = -1 ;
         switch(event.key.keysym.sym)
         {
@@ -328,33 +336,67 @@ void CheckForInput(SDL_Event event)
         }
         if (key != -1)
         {
+            // ... deactivate that key
             inputKeys[key] = 0x00;
         }
     }
 }
 
+// Draw graphics to screen using data stored in screenData
+void Draw(SDL_Window **window, SDL_Surface **surface, SDL_Surface **graphics)
+{
+    // Current surface of the window
+    *surface = SDL_GetWindowSurface(*window);
+
+    // New surface created from data in screenData
+    *graphics = SDL_CreateRGBSurfaceFrom(
+        (void *)screenData,
+        SCREEN_WIDTH,
+        SCREEN_HEIGHT,
+        CHANNELS * 8,
+        SCREEN_WIDTH * CHANNELS,
+        0x0000FF,
+        0x00FF00,
+        0xFF0000,
+        0x000000
+    );
+
+    // Apply new surface and update window
+    SDL_BlitScaled(*graphics, NULL, *surface, NULL);
+    SDL_UpdateWindowSurface(*window);
+}
+
+// Callback function for SDL_Timer. Executes once for each interval
 Uint32 DecrementTimers(Uint32 interval, void *param)
 {
+    // Decrement delay and sound registers
     if(regDT > 0)
         --regDT;
     if(regST > 0)
         --regST;
     
+    // If sound regsiter is positive, play beep
     if(regST > 0)
         Mix_PlayChannel(-1, (Mix_Chunk *)param, 0);
 
+    // This function is called again after this interval has elapsed
     return interval;
 }
 
+// Fetch the next instruction for execution
 WORD Fetch()
 {
+    // Bitwise logic is necessary because memory is indexed by BYTE and an instruction
+    // is a WORD (two BYTES)
     WORD inst = mainMemory[PC++];
     inst <<= 8;
     inst |= mainMemory[PC++];
-    //printf("0x%04X:", inst);
+
     return inst;
 }
 
+// Calls the correct execute function for a given instruction or the correct decode
+// function for a set of possible instructions
 void DecodeExecute(WORD inst)
 {
     switch(inst & 0xF000)
@@ -377,9 +419,9 @@ void DecodeExecute(WORD inst)
         case 0xF000: DecodeF000(inst);  break;
         default: break;
     }
-    //printf("\n");
 }
 
+// Calls the correct execution function for a given instruction that begins with 0
 void Decode0000(WORD inst)
 {
     switch(inst)
@@ -390,6 +432,7 @@ void Decode0000(WORD inst)
     }
 }
 
+// Calls the correct execution function for a given instruction that begins with 8
 void Decode8000(WORD inst)
 {
     switch(inst & 0x000F)
@@ -407,6 +450,7 @@ void Decode8000(WORD inst)
     }
 }
 
+// Calls the correct execution function for a given instruction that begins with E
 void DecodeE000(WORD inst)
 {
     switch(inst & 0xF0FF)
@@ -417,6 +461,7 @@ void DecodeE000(WORD inst)
     }
 }
 
+// Calls the correct execution function for a given instruction that begins with F
 void DecodeF000(WORD inst)
 {
     switch(inst & 0x00FF)
