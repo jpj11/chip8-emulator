@@ -38,13 +38,13 @@ WORD SP;    // Stack pointer
 BYTE screenData[SCREEN_HEIGHT][SCREEN_WIDTH][CHANNELS];
 
 // SDL plumbing stuff...
-int InitializeSDL(SDL_Window **window, Mix_Chunk **beep, const unsigned int MULTIPLIER);
+int InitializeSDL(SDL_Window **window, SDL_Renderer **renderer, Mix_Chunk **beep, const unsigned int MULTIPLIER);
 
 // Helper functions for CPU
 void InitializeCPU();
 void InitNumericalSprites();
 void CheckForInput(SDL_Event event);
-void Draw(SDL_Window **window, SDL_Surface **surface, SDL_Surface **graphics);
+int Draw(SDL_Window **window, SDL_Renderer **renderer);
 Uint32 DecrementTimers(Uint32 interval, void *param);
 
 // Implement CPU execution. All the work is done here

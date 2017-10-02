@@ -44,12 +44,11 @@ int main(int argc, char **argv)
     srand(time(NULL));
 
     SDL_Window *window = NULL;      // Window rendered to
-    SDL_Surface *surface = NULL;    // Current surface of the window
-    SDL_Surface *graphics = NULL;   // Surface generated from graphics data (screenData)
+    SDL_Renderer *renderer = NULL;  // Used to render textures
     Mix_Chunk *beep = NULL;         // Stores the beep effect
 
     // Non-zero return indicates unrecoverable SDL initialization error. Abort
-    if(InitializeSDL(&window, &beep, MULTIPLIER) != 0)
+    if(InitializeSDL(&window, &renderer, &beep, MULTIPLIER) != 0)
         return -1;
 
     int quit = 0;       // Continue execution until the user quits
@@ -78,20 +77,21 @@ int main(int argc, char **argv)
         DecodeExecute(inst);
 
         // Draw new graphics based on changed state
-        Draw(&window, &surface, &graphics);
+        if(Draw(&window, &renderer) != 0)
+            return -1;
     }
 
     // SDL cleanup
     SDL_RemoveTimer(timerID);
     Mix_FreeChunk(beep);
-    SDL_FreeSurface(surface);
-    SDL_FreeSurface(graphics);
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
 
     return 0;
 }
 
 // General SDL plumbing...
-int InitializeSDL(SDL_Window **window, Mix_Chunk **beep, const unsigned int MULTIPLIER)
+int InitializeSDL(SDL_Window **window, SDL_Renderer **renderer, Mix_Chunk **beep, const unsigned int MULTIPLIER)
 {
     // Initialize SDL
     if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_AUDIO) < 0)
@@ -110,6 +110,17 @@ int InitializeSDL(SDL_Window **window, Mix_Chunk **beep, const unsigned int MULT
             fprintf(stderr, "SDL ERROR!\nWindow could not be created: %s", SDL_GetError());
             return -1;
         }
+        else
+        {
+            // Create renderer
+            *renderer = SDL_CreateRenderer(*window, -1, SDL_RENDERER_ACCELERATED);
+            if(*renderer == NULL)
+            {
+                fprintf(stderr, "SDL ERROR!\nRenderer could not be created: %s", SDL_GetError());
+                return -1;
+            }
+            SDL_SetRenderDrawColor(*renderer, 0xFF, 0xFF, 0xFF, 0xFF);
+        }
     }
 
     // Initialize SDL_mixer extension
@@ -120,7 +131,6 @@ int InitializeSDL(SDL_Window **window, Mix_Chunk **beep, const unsigned int MULT
     *beep = Mix_LoadWAV("beep.wav");
     if(*beep == NULL)
         fprintf(stderr, "SDL ERROR!\nCouldn't load audio file: %s", SDL_GetError());
-
     
     return 0;
 }
@@ -334,13 +344,10 @@ void CheckForInput(SDL_Event event)
 }
 
 // Draw graphics to screen using data stored in screenData
-void Draw(SDL_Window **window, SDL_Surface **surface, SDL_Surface **graphics)
+int Draw(SDL_Window **window, SDL_Renderer **renderer)
 {
-    // Current surface of the window
-    *surface = SDL_GetWindowSurface(*window);
-
     // New surface created from data in screenData
-    *graphics = SDL_CreateRGBSurfaceFrom(
+    SDL_Surface *graphics = SDL_CreateRGBSurfaceFrom(
         (void *)screenData,
         SCREEN_WIDTH,
         SCREEN_HEIGHT,
@@ -352,9 +359,24 @@ void Draw(SDL_Window **window, SDL_Surface **surface, SDL_Surface **graphics)
         0x000000
     );
 
-    // Apply new surface and update window
-    SDL_BlitScaled(*graphics, NULL, *surface, NULL);
-    SDL_UpdateWindowSurface(*window);
+    // Create texture from graphics
+    SDL_Texture *texture = SDL_CreateTextureFromSurface(*renderer, graphics);
+    if(texture == NULL)
+    {
+        fprintf(stderr, "SDL ERROR!\nTexture could not be created: %s", SDL_GetError());
+        return -1;
+    }
+
+    // Render texture
+    SDL_RenderClear(*renderer);
+    SDL_RenderCopy(*renderer, texture, NULL, NULL);
+    SDL_RenderPresent(*renderer);
+
+    // Free SDL resources
+    SDL_FreeSurface(graphics);
+    SDL_DestroyTexture(texture);
+
+    return 0;
 }
 
 // Callback function for SDL_Timer. Executes once for each interval
@@ -477,9 +499,9 @@ void Execute00E0()
     {
         for(int x = 0; x < SCREEN_WIDTH; ++x)
         {
-            screenData[y][x][0] = 0x53;
-            screenData[y][x][1] = 0x7D;
-            screenData[y][x][2] = 0x55;
+            screenData[y][x][0] = 0xFF;
+            screenData[y][x][1] = 0xFF;
+            screenData[y][x][2] = 0xFF;
         }
     }
 }
@@ -736,9 +758,7 @@ void ExecuteDXYN(WORD inst)
                 {
                     // Set VF and change color to erase pixel
                     dataRegisters[0xF] = 1;
-                    drawColorR = 0x53;
-                    drawColorG = 0x7D;
-                    drawColorB = 0x55;
+                    drawColorR = drawColorG = drawColorB = 0xFF;
                 }
 
                 // Draw pixel to screen
