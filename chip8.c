@@ -180,11 +180,11 @@ void InitNumericalSprites()
     mainMemory[0x009] = 0x70;
 
     // The sprite 2
-    mainMemory[0x00A] = 0xF0;
-    mainMemory[0x00B] = 0x10;
-    mainMemory[0x00C] = 0xF0;
-    mainMemory[0x00D] = 0x80;
-    mainMemory[0x00E] = 0xF0;
+    // mainMemory[0x00A] = 0xF0;
+    // mainMemory[0x00B] = 0x10;
+    // mainMemory[0x00C] = 0xF0;
+    // mainMemory[0x00D] = 0x80;
+    // mainMemory[0x00E] = 0xF0;
 
     // The sprite 3
     mainMemory[0x00F] = 0xF0;
