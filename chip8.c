@@ -15,6 +15,8 @@ int main(int argc, char **argv)
         return -1;
     }
     
+    // Hiya there fella
+
     // Open ROM file
     FILE *input;
     if((input = fopen(argv[1], "rb")) == NULL)
